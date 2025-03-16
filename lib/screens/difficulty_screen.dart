@@ -1,11 +1,29 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
-import 'package:snake_game/screens/game_screen.dart';
+import '../services/score_service.dart';
+import 'game_screen.dart';
 
-class DifficultyScreen extends StatelessWidget {
+class DifficultyScreen extends StatefulWidget {
   final String gameMode;
-
   const DifficultyScreen({super.key, required this.gameMode});
+
+  @override
+  State<DifficultyScreen> createState() => _DifficultyScreenState();
+}
+
+class _DifficultyScreenState extends State<DifficultyScreen> {
+  int highScore = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHighScore();
+  }
+
+  Future<void> _loadHighScore() async {
+    highScore = await ScoreService.getHighScore(widget.gameMode);
+    setState(() {});
+  }
 
   Widget _buildDifficultyButton(BuildContext context, String difficulty) {
     return Padding(
@@ -31,10 +49,10 @@ class DifficultyScreen extends StatelessWidget {
               MaterialPageRoute(
                 builder: (context) => GameScreen(
                   difficulty: difficulty,
-                  gameMode: gameMode,
+                  gameMode: widget.gameMode,
                 ),
               ),
-            );
+            ).then((_) => _loadHighScore()); // Reload high score when returning
           },
           child: Text(
             difficulty,
@@ -58,10 +76,19 @@ class DifficultyScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '$gameMode Mode',
+              '${widget.gameMode} Mode',
               style: const TextStyle(
                 color: MyApp.primaryColor,
                 fontSize: 48,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'High Score: $highScore',
+              style: const TextStyle(
+                color: Colors.amber,
+                fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
             ),

@@ -258,23 +258,25 @@ class _GameScreenState extends State<GameScreen> {
       setState(() {
         for (var obstacle in obstacles) {
           // Move obstacle according to its direction and speed
-          obstacle.move(squaresPerRow, squaresPerCol);
+          if (obstacle.move(squaresPerRow, squaresPerCol)) {
+            // When obstacle reaches edge, generate new random direction and position
+            obstacle.direction = Direction.values[randomGen.nextInt(4)];
+            obstacle.randomizePosition(randomGen, squaresPerRow, squaresPerCol);
+          }
         }
       });
     });
   }
 
   void _addNewObstacle() {
-    obstacles.add(
-      Obstacle(
-        position: Offset(
-          randomGen.nextInt(squaresPerRow).toDouble(),
-          randomGen.nextInt(squaresPerCol).toDouble(),
-        ),
-        direction: Direction.values[randomGen.nextInt(4)],
-        speed: 0.2 + (randomGen.nextDouble() * 0.3), // Random speed between 0.2 and 0.5
-      ),
+    Direction randomDirection = Direction.values[randomGen.nextInt(4)];
+    Obstacle newObstacle = Obstacle(
+      position: Offset(0, 0), // Initial position will be set by randomizePosition
+      direction: randomDirection,
+      speed: 0.2 + (randomGen.nextDouble() * 0.3), // Random speed between 0.2 and 0.5
     );
+    newObstacle.randomizePosition(randomGen, squaresPerRow, squaresPerCol);
+    obstacles.add(newObstacle);
   }
 
   bool _checkCollision(Offset position) {
@@ -383,75 +385,89 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        if (isPlaying) {
-          isPlaying = false;
-          return await showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.black87,
-              title: const Text(
-                'Exit Game?',
-                style: TextStyle(color: Colors.red),
-              ),
-              content: const Text(
-                'Are you sure you want to exit the game?',
-                style: TextStyle(color: Colors.white),
-              ),
-              actions: [
-                TextButton(
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.green),
-                  ),
-                  onPressed: () {
-                    isPlaying = true;
-                    Navigator.of(context).pop(false);
-                  },
-                ),
-                TextButton(
-                  child: const Text(
-                    'Exit',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop(true);
-                  },
-                ),
-              ],
-            ),
-          );
-        }
-        return true;
-      },
+      onWillPop: () async => false, // Disable system back button
       child: Scaffold(
         backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back,
+              color: Colors.red,
+            ),
+            onPressed: () {
+              if (isPlaying) {
+                isPlaying = false;
+                showDialog(
+                  context: context,
+                  barrierDismissible: false, // Prevent dialog dismissal by tapping outside
+                  builder: (context) => AlertDialog(
+                    backgroundColor: Colors.black87,
+                    title: const Text(
+                      'Exit Game?',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    content: const Text(
+                      'Are you sure you want to exit the game?',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    actions: [
+                      TextButton(
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.green),
+                        ),
+                        onPressed: () {
+                          isPlaying = true;
+                          Navigator.of(context).pop();
+                        },
+                      ),
+                      TextButton(
+                        child: const Text(
+                          'Exit',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).pop();
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Score: $score',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  isPlaying ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  setState(() {
+                    isPlaying = !isPlaying;
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
         body: SafeArea(
           child: Column(
             children: [
-              ScoreBoard(
-                currentScore: score,
-                highScore: highScore,
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Score: $score',
-                        style: TextStyle(color: Colors.white, fontSize: 20)),
-                    IconButton(
-                      icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow,
-                          color: Colors.white),
-                      onPressed: () {
-                        setState(() {
-                          isPlaying = !isPlaying;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
               Expanded(
                 child: GestureDetector(
                   onVerticalDragUpdate: (details) {
@@ -476,8 +492,8 @@ class _GameScreenState extends State<GameScreen> {
                       squaresPerRow: squaresPerRow,
                       squaresPerCol: squaresPerCol,
                       bonusTimeLeft: bonusTimeLeft,
-                      gameMode: widget.gameMode, // Add this line
-                      obstacles: obstacles, // Add this line
+                      gameMode: widget.gameMode,
+                      obstacles: obstacles,
                     ),
                     size: Size.infinite,
                   ),
@@ -676,27 +692,65 @@ enum Direction { up, down, left, right }
 class Obstacle {
   Offset position;
   Direction direction;
-  double speed;
+  final double speed;
 
   Obstacle({
     required this.position,
     required this.direction,
-    required this.speed,
+    this.speed = 1.0,
   });
 
-  void move(int squaresPerRow, int squaresPerCol) {
+  bool move(int squaresPerRow, int squaresPerCol) {
+    bool shouldReposition = false;
+    
     switch (direction) {
       case Direction.up:
-        position = Offset(position.dx, (position.dy - speed) % squaresPerCol);
+        position = Offset(position.dx, position.dy - speed);
+        if (position.dy < 0) shouldReposition = true;
         break;
       case Direction.down:
-        position = Offset(position.dx, (position.dy + speed) % squaresPerCol);
+        position = Offset(position.dx, position.dy + speed);
+        if (position.dy >= squaresPerCol) shouldReposition = true;
         break;
       case Direction.left:
-        position = Offset((position.dx - speed) % squaresPerRow, position.dy);
+        position = Offset(position.dx - speed, position.dy);
+        if (position.dx < 0) shouldReposition = true;
         break;
       case Direction.right:
-        position = Offset((position.dx + speed) % squaresPerRow, position.dy);
+        position = Offset(position.dx + speed, position.dy);
+        if (position.dx >= squaresPerRow) shouldReposition = true;
+        break;
+    }
+    
+    return shouldReposition;
+  }
+
+  void randomizePosition(Random randomGen, int squaresPerRow, int squaresPerCol) {
+    // Generate position on a random edge based on direction
+    switch (direction) {
+      case Direction.up:
+        position = Offset(
+          randomGen.nextInt(squaresPerRow).toDouble(),
+          squaresPerCol.toDouble(),
+        );
+        break;
+      case Direction.down:
+        position = Offset(
+          randomGen.nextInt(squaresPerRow).toDouble(),
+          0,
+        );
+        break;
+      case Direction.left:
+        position = Offset(
+          squaresPerRow.toDouble(),
+          randomGen.nextInt(squaresPerCol).toDouble(),
+        );
+        break;
+      case Direction.right:
+        position = Offset(
+          0,
+          randomGen.nextInt(squaresPerCol).toDouble(),
+        );
         break;
     }
   }
