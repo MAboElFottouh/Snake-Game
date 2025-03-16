@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:snake_game/screens/game_screen.dart';  
 
 class DifficultyScreen extends StatelessWidget {
   final String gameMode;
@@ -61,7 +62,15 @@ class DifficultyScreen extends StatelessWidget {
           ),
         ),
         onPressed: () {
-          // TODO: Navigate to game screen with selected difficulty
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => GameScreen(
+                difficulty: difficulty,
+                gameMode: gameMode,
+              ),
+            ),
+          );
         },
         child: Text(
           difficulty,
