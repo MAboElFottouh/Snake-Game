@@ -90,6 +90,4 @@ flutter run
 - Android device/emulator or iOS device/simulator
 
 
-## Credits
-
-Developed by Eng Mahmoud Abo Elfotouh
+## Developed by Eng Mahmoud Abo Elfotouh
