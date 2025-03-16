@@ -1,18 +1,18 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ScoreService {
-  static const String _highScoreKey = 'highScore';
+  static String _getHighScoreKey(String gameMode) => 'highScore_$gameMode';
 
-  static Future<int> getHighScore() async {
+  static Future<int> getHighScore(String gameMode) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_highScoreKey) ?? 0;
+    return prefs.getInt(_getHighScoreKey(gameMode)) ?? 0;
   }
 
-  static Future<void> updateHighScore(int score) async {
+  static Future<void> updateHighScore(String gameMode, int score) async {
     final prefs = await SharedPreferences.getInstance();
-    final currentHigh = await getHighScore();
+    final currentHigh = await getHighScore(gameMode);
     if (score > currentHigh) {
-      await prefs.setInt(_highScoreKey, score);
+      await prefs.setInt(_getHighScoreKey(gameMode), score);
     }
   }
 }

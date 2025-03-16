@@ -1,10 +1,53 @@
 import 'package:flutter/material.dart';
-import 'package:snake_game/screens/game_screen.dart';  
+import '../main.dart';
+import 'package:snake_game/screens/game_screen.dart';
 
 class DifficultyScreen extends StatelessWidget {
   final String gameMode;
 
   const DifficultyScreen({super.key, required this.gameMode});
+
+  Widget _buildDifficultyButton(BuildContext context, String difficulty) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+      child: SizedBox(
+        width: double.infinity,
+        height: 60,
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: MyApp.buttonColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: const BorderSide(
+                color: MyApp.primaryColor,
+                width: 2,
+              ),
+            ),
+            elevation: 5,
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => GameScreen(
+                  difficulty: difficulty,
+                  gameMode: gameMode,
+                ),
+              ),
+            );
+          },
+          child: Text(
+            difficulty,
+            style: const TextStyle(
+              fontSize: 24,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,68 +60,16 @@ class DifficultyScreen extends StatelessWidget {
             Text(
               '$gameMode Mode',
               style: const TextStyle(
-                color: Color(0xFF8B0000),
+                color: MyApp.primaryColor,
                 fontSize: 48,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 50),
-            Container(
-              width: 280, // Fixed width for all buttons
-              child: Column(
-                children: [
-                  _buildDifficultyButton(context, 'Easy'),
-                  const SizedBox(height: 20),
-                  _buildDifficultyButton(context, 'Medium'),
-                  const SizedBox(height: 20),
-                  _buildDifficultyButton(context, 'Hard'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 30),
-            IconButton(
-              icon: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF8B0000),
-                size: 40,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
+            const SizedBox(height: 40),
+            _buildDifficultyButton(context, 'Easy'),
+            _buildDifficultyButton(context, 'Medium'),
+            _buildDifficultyButton(context, 'Hard'),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDifficultyButton(BuildContext context, String difficulty) {
-    return SizedBox(
-      width: double.infinity,
-      height: 60,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF006400),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => GameScreen(
-                difficulty: difficulty,
-                gameMode: gameMode,
-              ),
-            ),
-          );
-        },
-        child: Text(
-          difficulty,
-          style: const TextStyle(
-            fontSize: 24,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
         ),
       ),
     );

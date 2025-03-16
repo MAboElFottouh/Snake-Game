@@ -36,39 +36,53 @@ class _GameScreenState extends State<GameScreen> {
   late final int pointsPerFood;
   late final int gameSpeed;
 
-
   Offset? bonusFood;
   Timer? bonusTimer;
   int foodCount = 0;
   int bonusPoints = 0;
   int bonusTimeLeft = 5;
 
+  // Add new properties
+  List<Obstacle> obstacles = [];
+  Timer? obstacleTimer;
+  static const int numObstacles = 3;
+
+  // Add new properties for dynamic speed and points
+  int currentSpeed = 200;
+  int currentPointsPerFood = 3;
+  static const double speedIncrease = 0.98; // 2% faster each time (was 5%)
+
   @override
   void initState() {
     super.initState();
     _loadHighScore();
+    // Initialize base speed and points based on difficulty
     switch (widget.difficulty) {
       case 'Easy':
-        pointsPerFood = 3;
-        gameSpeed = 200; 
+        currentPointsPerFood = 3;
+        currentSpeed = 200;
         break;
       case 'Medium':
-        pointsPerFood = 5;
-        gameSpeed = 150; 
+        currentPointsPerFood = 5;
+        currentSpeed = 150;
         break;
       case 'Hard':
-        pointsPerFood = 7;
-        gameSpeed = 100;
+        currentPointsPerFood = 7;
+        currentSpeed = 100;
         break;
       default:
-        pointsPerFood = 3;
-        gameSpeed = 200;
+        currentPointsPerFood = 3;
+        currentSpeed = 200;
     }
     _startGame();
+    if (widget.gameMode == 'Challenge') {
+      _generateObstacles();
+    }
   }
 
   Future<void> _loadHighScore() async {
-    highScore = await ScoreService.getHighScore();
+    // Get high score for specific mode
+    highScore = await ScoreService.getHighScore(widget.gameMode);
     setState(() {});
   }
 
@@ -80,10 +94,31 @@ class _GameScreenState extends State<GameScreen> {
       _generateFood();
       isPlaying = true;
       score = 0;
+      foodCount = 0;
+      // Reset speed and points to initial values
+      switch (widget.difficulty) {
+        case 'Easy':
+          currentPointsPerFood = 3;
+          currentSpeed = 200;
+          break;
+        case 'Medium':
+          currentPointsPerFood = 5;
+          currentSpeed = 150;
+          break;
+        case 'Hard':
+          currentPointsPerFood = 7;
+          currentSpeed = 100;
+          break;
+      }
       
-      timer = Timer.periodic(Duration(milliseconds: gameSpeed), (timer) {
-        _updateGame();
-      });
+      _updateGameTimer();
+    });
+  }
+
+  void _updateGameTimer() {
+    timer?.cancel();
+    timer = Timer.periodic(Duration(milliseconds: currentSpeed), (timer) {
+      _updateGame();
     });
   }
 
@@ -101,9 +136,25 @@ class _GameScreenState extends State<GameScreen> {
       snakePos.insert(0, newHead);
 
       if (newHead == food) {
-        score += pointsPerFood;
+        score += currentPointsPerFood;
         AudioService.playEatSound();
         foodCount++;
+        
+        // Increase speed every 5 food items instead of every time
+        if (foodCount % 5 == 0) {
+          currentSpeed = (currentSpeed * speedIncrease).toInt();
+          _updateGameTimer();
+        }
+
+        // Increase points every 10 food items
+        if (foodCount % 10 == 0) {
+          currentPointsPerFood++;
+        }
+        
+        // Add new obstacle every 5 food items in Challenge mode
+        if (widget.gameMode == 'Challenge' && foodCount % 5 == 0) {
+          _addNewObstacle();
+        }
         
         if (foodCount % 5 == 0) {
           _generateBonusFood();
@@ -125,8 +176,8 @@ class _GameScreenState extends State<GameScreen> {
   Offset _getNextPosition() {
     Offset head = snakePos.first;
     
-    // In Classic mode - wrap around the screen
-    if (widget.gameMode == 'Classic') {
+    // Both Classic and Challenge modes wrap around the screen
+    if (widget.gameMode == 'Classic' || widget.gameMode == 'Challenge') {
       switch (direction) {
         case Direction.up:
           return Offset(head.dx, (head.dy - 1) % squaresPerCol);
@@ -138,7 +189,7 @@ class _GameScreenState extends State<GameScreen> {
           return Offset((head.dx + 1) % squaresPerRow, head.dy);
       }
     } 
-    // In Boxed mode - no wrap around
+    // Only Boxed mode has no wrap around
     else {
       switch (direction) {
         case Direction.up:
@@ -194,8 +245,40 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  void _generateObstacles() {
+    obstacles.clear();
+    // Start with 3 obstacles
+    for (int i = 0; i < numObstacles; i++) {
+      _addNewObstacle();
+    }
+
+    // Move obstacles continuously
+    obstacleTimer = Timer.periodic(Duration(milliseconds: 100), (timer) {
+      if (!isPlaying) return;
+      setState(() {
+        for (var obstacle in obstacles) {
+          // Move obstacle according to its direction and speed
+          obstacle.move(squaresPerRow, squaresPerCol);
+        }
+      });
+    });
+  }
+
+  void _addNewObstacle() {
+    obstacles.add(
+      Obstacle(
+        position: Offset(
+          randomGen.nextInt(squaresPerRow).toDouble(),
+          randomGen.nextInt(squaresPerCol).toDouble(),
+        ),
+        direction: Direction.values[randomGen.nextInt(4)],
+        speed: 0.2 + (randomGen.nextDouble() * 0.3), // Random speed between 0.2 and 0.5
+      ),
+    );
+  }
+
   bool _checkCollision(Offset position) {
-    // First check wall collision in boxed mode
+    // Wall collision only in Boxed mode
     if (widget.gameMode == 'Boxed') {
       if (position.dx < 0 || position.dx >= squaresPerRow ||
           position.dy < 0 || position.dy >= squaresPerCol) {
@@ -217,16 +300,33 @@ class _GameScreenState extends State<GameScreen> {
       }
     }
 
+    // Check obstacle collision
+    if (widget.gameMode == 'Challenge') {
+      for (var obstacle in obstacles) {
+        if ((position - obstacle.position).distance < 1) {
+          AudioService.playGameOverSound();
+          return true;
+        }
+      }
+    }
+
     return false;
   }
 
   void _gameOver() async {
+    // Stop all timers
     timer?.cancel();
-    AudioService.playGameOverSound();
+    obstacleTimer?.cancel();  // Stop obstacles movement
+    bonusTimer?.cancel();
     
+    // Set game state
+    isPlaying = false;
+    
+    AudioService.playGameOverSound();
     HapticFeedback.vibrate();
     
-    await ScoreService.updateHighScore(score);
+    // Update high score for specific mode
+    await ScoreService.updateHighScore(widget.gameMode, score);
     await _loadHighScore();
 
     if (!mounted) return;
@@ -243,7 +343,7 @@ class _GameScreenState extends State<GameScreen> {
           children: [
             Text('Score: $score',
                 style: TextStyle(color: Colors.white)),
-            Text('High Score: $highScore',
+            Text('${widget.gameMode} Mode High Score: $highScore',
                 style: TextStyle(color: Colors.amber)),
           ],
         ),
@@ -254,6 +354,9 @@ class _GameScreenState extends State<GameScreen> {
             onPressed: () {
               Navigator.of(context).pop();
               _startGame();
+              if (widget.gameMode == 'Challenge') {
+                _generateObstacles();  // Regenerate obstacles for new game
+              }
             },
           ),
           TextButton(
@@ -271,8 +374,9 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
-    bonusTimer?.cancel();
     timer?.cancel();
+    obstacleTimer?.cancel();
+    bonusTimer?.cancel();
     super.dispose();
   }
 
@@ -373,6 +477,7 @@ class _GameScreenState extends State<GameScreen> {
                       squaresPerCol: squaresPerCol,
                       bonusTimeLeft: bonusTimeLeft,
                       gameMode: widget.gameMode, // Add this line
+                      obstacles: obstacles, // Add this line
                     ),
                     size: Size.infinite,
                   ),
@@ -395,6 +500,7 @@ class GamePainter extends CustomPainter {
   final int squaresPerCol;
   final int bonusTimeLeft;
   final String gameMode; // Add this
+  final List<Obstacle> obstacles; // Add this
 
   GamePainter({
     required this.snakePos,
@@ -404,6 +510,7 @@ class GamePainter extends CustomPainter {
     required this.squaresPerCol,
     this.bonusTimeLeft = 0,
     required this.gameMode, // Add this
+    this.obstacles = const [], // Add this
   });
 
   @override
@@ -541,6 +648,23 @@ class GamePainter extends CustomPainter {
         ),
       );
     }
+
+    // Draw obstacles
+    final obstaclePaint = Paint()
+      ..color = Colors.purple
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+
+    for (var obstacle in obstacles) {
+      canvas.drawCircle(
+        Offset(
+          (obstacle.position.dx + 0.5) * size.width / squaresPerRow,
+          (obstacle.position.dy + 0.5) * size.height / squaresPerCol,
+        ),
+        min(size.width / squaresPerRow, size.height / squaresPerCol) / 2,
+        obstaclePaint,
+      );
+    }
   }
 
   @override
@@ -548,3 +672,32 @@ class GamePainter extends CustomPainter {
 }
 
 enum Direction { up, down, left, right }
+
+class Obstacle {
+  Offset position;
+  Direction direction;
+  double speed;
+
+  Obstacle({
+    required this.position,
+    required this.direction,
+    required this.speed,
+  });
+
+  void move(int squaresPerRow, int squaresPerCol) {
+    switch (direction) {
+      case Direction.up:
+        position = Offset(position.dx, (position.dy - speed) % squaresPerCol);
+        break;
+      case Direction.down:
+        position = Offset(position.dx, (position.dy + speed) % squaresPerCol);
+        break;
+      case Direction.left:
+        position = Offset((position.dx - speed) % squaresPerRow, position.dy);
+        break;
+      case Direction.right:
+        position = Offset((position.dx + speed) % squaresPerRow, position.dy);
+        break;
+    }
+  }
+}
