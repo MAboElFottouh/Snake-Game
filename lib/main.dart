@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:snake_game/screens/difficulty_screen.dart';
-import 'screens/mode_selection_screen.dart';
+
 
 void main() {
   runApp(const MyApp());
@@ -11,6 +11,8 @@ class MyApp extends StatelessWidget {
 
   static const Color primaryColor = Color(0xFF8B0000); // Dark red
   static const Color buttonColor = Color(0xFF1A1A1A); // Dark gray for buttons
+  static const Color snakeGradientStart = Color(0xFF8B0000); // Dark red
+  static const Color snakeGradientEnd = Color(0xFFFF4444);   // Light red
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +38,7 @@ class MainMenu extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
       child: SizedBox(
         width: double.infinity,
-        height: 60,
+        height: 60,  // Reduced height since we removed description
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: MyApp.buttonColor,
@@ -90,6 +92,7 @@ class MainMenu extends StatelessWidget {
             _buildModeButton(context, 'Classic'),
             _buildModeButton(context, 'Boxed'),
             _buildModeButton(context, 'Challenge'),
+            _buildModeButton(context, 'Walls'),
           ],
         ),
       ),

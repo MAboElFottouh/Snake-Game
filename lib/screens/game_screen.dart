@@ -52,6 +52,11 @@ class _GameScreenState extends State<GameScreen> {
   int currentPointsPerFood = 3;
   static const double speedIncrease = 0.98; // 2% faster each time (was 5%)
 
+  // Add new properties
+  List<Wall> walls = [];
+  Timer? wallTimer;
+  static const int numWalls = 4;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +78,9 @@ class _GameScreenState extends State<GameScreen> {
       default:
         currentPointsPerFood = 3;
         currentSpeed = 200;
+    }
+    if (widget.gameMode == 'Walls') {
+      _generateWalls();
     }
     _startGame();
     if (widget.gameMode == 'Challenge') {
@@ -140,10 +148,22 @@ class _GameScreenState extends State<GameScreen> {
         AudioService.playEatSound();
         foodCount++;
         
-        // Increase speed every 5 food items instead of every time
+        // Increase speed every 5 food items
         if (foodCount % 5 == 0) {
           currentSpeed = (currentSpeed * speedIncrease).toInt();
           _updateGameTimer();
+
+          // Add new wall in Walls mode
+          if (widget.gameMode == 'Walls') {
+            Wall newWall = Wall(
+              position: Offset(0, 0),
+              isVertical: walls.length % 2 == 0,
+              speed: 0.1 * (randomGen.nextBool() ? 1 : -1),
+              length: 5.0,
+            );
+            newWall.randomizePosition(randomGen, squaresPerRow, squaresPerCol);
+            walls.add(newWall);
+          }
         }
 
         // Increase points every 10 food items
@@ -176,8 +196,8 @@ class _GameScreenState extends State<GameScreen> {
   Offset _getNextPosition() {
     Offset head = snakePos.first;
     
-    // Both Classic and Challenge modes wrap around the screen
-    if (widget.gameMode == 'Classic' || widget.gameMode == 'Challenge') {
+    // All modes except Boxed have wrap around
+    if (widget.gameMode != 'Boxed') {
       switch (direction) {
         case Direction.up:
           return Offset(head.dx, (head.dy - 1) % squaresPerCol);
@@ -279,6 +299,34 @@ class _GameScreenState extends State<GameScreen> {
     obstacles.add(newObstacle);
   }
 
+  void _generateWalls() {
+    walls.clear();
+    // Create some vertical and horizontal walls
+    for (int i = 0; i < numWalls; i++) {
+      Wall wall = Wall(
+        position: Offset(0, 0),  // Initial position will be set by randomizePosition
+        isVertical: i % 2 == 0,
+        speed: 0.1 * (randomGen.nextBool() ? 1 : -1),
+        length: 5.0,
+      );
+      wall.randomizePosition(randomGen, squaresPerRow, squaresPerCol);
+      walls.add(wall);
+    }
+
+    // Move walls
+    wallTimer = Timer.periodic(Duration(milliseconds: 50), (timer) {
+      if (!isPlaying) return;
+      setState(() {
+        for (var wall in walls) {
+          if (wall.move(squaresPerRow, squaresPerCol)) {
+            // When wall goes off screen, give it a new random position
+            wall.randomizePosition(randomGen, squaresPerRow, squaresPerCol);
+          }
+        }
+      });
+    });
+  }
+
   bool _checkCollision(Offset position) {
     // Wall collision only in Boxed mode
     if (widget.gameMode == 'Boxed') {
@@ -312,6 +360,27 @@ class _GameScreenState extends State<GameScreen> {
       }
     }
 
+    // Check wall collisions
+    if (widget.gameMode == 'Walls') {
+      for (var wall in walls) {
+        if (wall.isVertical) {
+          if (position.dx.round() == wall.position.dx.round() &&
+              position.dy >= wall.position.dy &&
+              position.dy <= wall.position.dy + wall.length) {
+            AudioService.playGameOverSound();
+            return true;
+          }
+        } else {
+          if (position.dy.round() == wall.position.dy.round() &&
+              position.dx >= wall.position.dx &&
+              position.dx <= wall.position.dx + wall.length) {
+            AudioService.playGameOverSound();
+            return true;
+          }
+        }
+      }
+    }
+
     return false;
   }
 
@@ -319,6 +388,7 @@ class _GameScreenState extends State<GameScreen> {
     // Stop all timers
     timer?.cancel();
     obstacleTimer?.cancel();  // Stop obstacles movement
+    wallTimer?.cancel();
     bonusTimer?.cancel();
     
     // Set game state
@@ -356,8 +426,11 @@ class _GameScreenState extends State<GameScreen> {
             onPressed: () {
               Navigator.of(context).pop();
               _startGame();
+              // Regenerate obstacles/walls based on game mode
               if (widget.gameMode == 'Challenge') {
-                _generateObstacles();  // Regenerate obstacles for new game
+                _generateObstacles();
+              } else if (widget.gameMode == 'Walls') {
+                _generateWalls();  // Add this line to regenerate walls
               }
             },
           ),
@@ -379,6 +452,7 @@ class _GameScreenState extends State<GameScreen> {
     timer?.cancel();
     obstacleTimer?.cancel();
     bonusTimer?.cancel();
+    wallTimer?.cancel();
     super.dispose();
   }
 
@@ -494,6 +568,7 @@ class _GameScreenState extends State<GameScreen> {
                       bonusTimeLeft: bonusTimeLeft,
                       gameMode: widget.gameMode,
                       obstacles: obstacles,
+                      walls: walls,
                     ),
                     size: Size.infinite,
                   ),
@@ -517,6 +592,7 @@ class GamePainter extends CustomPainter {
   final int bonusTimeLeft;
   final String gameMode; // Add this
   final List<Obstacle> obstacles; // Add this
+  final List<Wall> walls; // Add this parameter
 
   GamePainter({
     required this.snakePos,
@@ -527,7 +603,15 @@ class GamePainter extends CustomPainter {
     this.bonusTimeLeft = 0,
     required this.gameMode, // Add this
     this.obstacles = const [], // Add this
+    this.walls = const [], // Add this parameter
   });
+
+  // Add gradient colors as static constants
+  static const Color snakeGradientStart = Color(0xFF8B0000); // Dark red
+  static const Color snakeGradientEnd = Color(0xFFFF4444);   // Light red
+
+  // Add new property for tail animation
+  final double tailFade = 0.8;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -569,34 +653,82 @@ class GamePainter extends CustomPainter {
 
     final paint = Paint();
 
-    // Draw snake with gradient effects
+    // Draw snake with gradient and tail effects
     for (var i = 0; i < snakePos.length; i++) {
-      // Create gradient color effect for snake
-      paint.color = HSVColor.fromAHSV(
-        1.0,
-        120 - (i * 2), // Green gradient
-        1.0,
-        0.8 - (i * 0.02), // Brightness gradient
-      ).toColor();
-
-      // Variable size for snake segments
-      double sizeFactor = 1.0 - (i * 0.01);
+      // Calculate fade factor for tail segments
+      final fadeProgress = 1.0 - ((i / snakePos.length) * tailFade);
       
-      // Draw snake segment with rounded corners
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
+      // Calculate segment size with reduction for tail
+      final segmentSize = 0.95 * min(
+        size.width / squaresPerRow,
+        size.height / squaresPerCol,
+      ) * (i == 0 ? 1.0 : fadeProgress);
+
+      // Create gradient color for each segment
+      final paint = Paint()
+        ..shader = LinearGradient(
+          colors: [
+            snakeGradientStart.withOpacity(fadeProgress),
+            snakeGradientEnd.withOpacity(fadeProgress),
+          ],
+          stops: [0.0, 1.0],
+        ).createShader(
           Rect.fromCenter(
             center: Offset(
               (snakePos[i].dx + 0.5) * size.width / squaresPerRow,
               (snakePos[i].dy + 0.5) * size.height / squaresPerCol,
             ),
-            width: (size.width / squaresPerRow - 1) * sizeFactor,
-            height: (size.height / squaresPerCol - 1) * sizeFactor,
+            width: size.width / squaresPerRow,
+            height: size.height / squaresPerCol,
           ),
-          Radius.circular(8), // Rounded corners
-        ),
-        paint,
+        )
+        ..style = PaintingStyle.fill;
+
+      // Add glow effect with fading
+      final glowPaint = Paint()
+        ..color = snakeGradientStart.withOpacity(0.3 * fadeProgress)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 3);
+
+      final center = Offset(
+        (snakePos[i].dx + 0.5) * size.width / squaresPerRow,
+        (snakePos[i].dy + 0.5) * size.height / squaresPerCol,
       );
+
+      // Draw rounded rectangle for segments with tail effect
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: center,
+          width: segmentSize,
+          height: segmentSize,
+        ),
+        Radius.circular(segmentSize / 4),
+      );
+
+      // Draw glow and segment
+      canvas.drawRRect(rect, glowPaint);
+      canvas.drawRRect(rect, paint);
+
+      // Draw head details only for first segment
+      if (i == 0) {
+        final headPaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill;
+
+        // Add eyes
+        final eyeSize = segmentSize / 6;
+        final eyeOffset = segmentSize / 4;
+
+        canvas.drawCircle(
+          center.translate(-eyeOffset, -eyeOffset),
+          eyeSize,
+          headPaint,
+        );
+        canvas.drawCircle(
+          center.translate(eyeOffset, -eyeOffset),
+          eyeSize,
+          headPaint,
+        );
+      }
     }
 
     // Draw regular food with normal red color
@@ -681,6 +813,56 @@ class GamePainter extends CustomPainter {
         obstaclePaint,
       );
     }
+
+    // Draw moving walls
+    if (gameMode == 'Walls') {
+      final wallPaint = Paint()
+        ..color = Colors.red[700]!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+
+      // Add glow effect for walls
+      final glowPaint = Paint()
+        ..color = Colors.red[700]!.withOpacity(0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8);
+
+      for (var wall in walls) {
+        if (wall.isVertical) {
+          // Draw vertical wall with glow
+          final startPoint = Offset(
+            (wall.position.dx + 0.5) * size.width / squaresPerRow,
+            wall.position.dy * size.height / squaresPerCol,
+          );
+          final endPoint = Offset(
+            (wall.position.dx + 0.5) * size.width / squaresPerRow,
+            (wall.position.dy + wall.length) * size.height / squaresPerCol,
+          );
+
+          // Draw glow effect
+          canvas.drawLine(startPoint, endPoint, glowPaint);
+          // Draw wall
+          canvas.drawLine(startPoint, endPoint, wallPaint);
+        } else {
+          // Draw horizontal wall with glow
+          final startPoint = Offset(
+            wall.position.dx * size.width / squaresPerRow,
+            (wall.position.dy + 0.5) * size.height / squaresPerCol,
+          );
+          final endPoint = Offset(
+            (wall.position.dx + wall.length) * size.width / squaresPerRow,
+            (wall.position.dy + 0.5) * size.height / squaresPerCol,
+          );
+
+          // Draw glow effect
+          canvas.drawLine(startPoint, endPoint, glowPaint);
+          // Draw wall
+          canvas.drawLine(startPoint, endPoint, wallPaint);
+        }
+      }
+    }
   }
 
   @override
@@ -752,6 +934,53 @@ class Obstacle {
           randomGen.nextInt(squaresPerCol).toDouble(),
         );
         break;
+    }
+  }
+}
+
+// Add Wall class after Obstacle class
+class Wall {
+  Offset position;
+  bool isVertical;
+  double speed;
+  double length;
+
+  Wall({
+    required this.position,
+    required this.isVertical,
+    this.speed = 0.1,
+    this.length = 5.0,
+  });
+
+  bool move(int squaresPerRow, int squaresPerCol) {
+    bool shouldReposition = false;
+    
+    if (isVertical) {
+      position = Offset(position.dx, position.dy + speed);
+      if (position.dy + length < 0 || position.dy > squaresPerCol) {
+        shouldReposition = true;
+      }
+    } else {
+      position = Offset(position.dx + speed, position.dy);
+      if (position.dx + length < 0 || position.dx > squaresPerRow) {
+        shouldReposition = true;
+      }
+    }
+    
+    return shouldReposition;
+  }
+
+  void randomizePosition(Random randomGen, int squaresPerRow, int squaresPerCol) {
+    if (isVertical) {
+      position = Offset(
+        randomGen.nextInt(squaresPerRow - 2).toDouble() + 1,
+        speed > 0 ? -length : squaresPerCol.toDouble(),
+      );
+    } else {
+      position = Offset(
+        speed > 0 ? -length : squaresPerRow.toDouble(),
+        randomGen.nextInt(squaresPerCol - 2).toDouble() + 1,
+      );
     }
   }
 }
