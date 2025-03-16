@@ -25,7 +25,6 @@ class _GameScreenState extends State<GameScreen> {
   static const int squaresPerCol = 40;
   final randomGen = Random();
 
-  // حالة اللعبة
   List<Offset> snakePos = [];
   Offset? food;
   Timer? timer;
@@ -37,7 +36,7 @@ class _GameScreenState extends State<GameScreen> {
   late final int pointsPerFood;
   late final int gameSpeed;
 
-  // إضافة متغيرات البونص
+
   Offset? bonusFood;
   Timer? bonusTimer;
   int foodCount = 0;
@@ -75,7 +74,6 @@ class _GameScreenState extends State<GameScreen> {
 
   void _startGame() {
     setState(() {
-      // وضع الثعبان في المنتصف
       snakePos = [
         Offset(squaresPerRow / 2, squaresPerCol / 2),
       ];
@@ -102,20 +100,17 @@ class _GameScreenState extends State<GameScreen> {
 
       snakePos.insert(0, newHead);
 
-      // التحقق من أكل الطعام العادي
       if (newHead == food) {
         score += pointsPerFood;
         AudioService.playEatSound();
         foodCount++;
         
-        // بعد كل 5 طعام، إنشاء طعام بونص
         if (foodCount % 5 == 0) {
           _generateBonusFood();
         }
         
         _generateFood();
       } 
-      // التحقق من أكل طعام البونص
       else if (bonusFood != null && newHead == bonusFood) {
         score += bonusPoints;
         AudioService.playEatSound();
@@ -129,15 +124,32 @@ class _GameScreenState extends State<GameScreen> {
 
   Offset _getNextPosition() {
     Offset head = snakePos.first;
-    switch (direction) {
-      case Direction.up:
-        return Offset(head.dx, (head.dy - 1) % squaresPerCol);
-      case Direction.down:
-        return Offset(head.dx, (head.dy + 1) % squaresPerCol);
-      case Direction.left:
-        return Offset((head.dx - 1) % squaresPerRow, head.dy);
-      case Direction.right:
-        return Offset((head.dx + 1) % squaresPerRow, head.dy);
+    
+    // In Classic mode - wrap around the screen
+    if (widget.gameMode == 'Classic') {
+      switch (direction) {
+        case Direction.up:
+          return Offset(head.dx, (head.dy - 1) % squaresPerCol);
+        case Direction.down:
+          return Offset(head.dx, (head.dy + 1) % squaresPerCol);
+        case Direction.left:
+          return Offset((head.dx - 1) % squaresPerRow, head.dy);
+        case Direction.right:
+          return Offset((head.dx + 1) % squaresPerRow, head.dy);
+      }
+    } 
+    // In Boxed mode - no wrap around
+    else {
+      switch (direction) {
+        case Direction.up:
+          return Offset(head.dx, head.dy - 1);
+        case Direction.down:
+          return Offset(head.dx, head.dy + 1);
+        case Direction.left:
+          return Offset(head.dx - 1, head.dy);
+        case Direction.right:
+          return Offset(head.dx + 1, head.dy);
+      }
     }
   }
 
@@ -154,9 +166,8 @@ class _GameScreenState extends State<GameScreen> {
 
   void _generateBonusFood() {
     bonusTimeLeft = 5;
-    bonusPoints = 30; // يبدأ ب 30 نقطة
+    bonusPoints = 30; 
     
-    // توليد موقع عشوائي للطعام البونص
     bool validPosition = false;
     while (!validPosition) {
       bonusFood = Offset(
@@ -166,11 +177,9 @@ class _GameScreenState extends State<GameScreen> {
       validPosition = !snakePos.contains(bonusFood) && bonusFood != food;
     }
 
-    // بدء العد التنازلي
     bonusTimer = Timer.periodic(Duration(seconds: 1), (timer) {
       setState(() {
         bonusTimeLeft--;
-        // تقليل النقاط كل ثانية
         switch (bonusTimeLeft) {
           case 4: bonusPoints = 20; break;
           case 3: bonusPoints = 15; break;
@@ -186,13 +195,29 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   bool _checkCollision(Offset position) {
+    // First check wall collision in boxed mode
     if (widget.gameMode == 'Boxed') {
       if (position.dx < 0 || position.dx >= squaresPerRow ||
           position.dy < 0 || position.dy >= squaresPerCol) {
+        AudioService.playGameOverSound();
         return true;
       }
     }
-    return snakePos.contains(position);
+
+    // If this position is food, it's not a collision
+    if (position == food || position == bonusFood) {
+      return false;
+    }
+    
+    // Check if snake hits its own body (excluding the tail when not growing)
+    for (int i = 0; i < snakePos.length - 1; i++) {
+      if (position == snakePos[i]) {
+        AudioService.playGameOverSound();
+        return true;
+      }
+    }
+
+    return false;
   }
 
   void _gameOver() async {
@@ -253,64 +278,108 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            ScoreBoard(
-              currentScore: score,
-              highScore: highScore,
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Score: $score',
-                      style: TextStyle(color: Colors.white, fontSize: 20)),
-                  IconButton(
-                    icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: Colors.white),
-                    onPressed: () {
-                      setState(() {
-                        isPlaying = !isPlaying;
-                      });
-                    },
-                  ),
-                ],
+    return WillPopScope(
+      onWillPop: () async {
+        if (isPlaying) {
+          isPlaying = false;
+          return await showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: Colors.black87,
+              title: const Text(
+                'Exit Game?',
+                style: TextStyle(color: Colors.red),
               ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onVerticalDragUpdate: (details) {
-                  if (direction != Direction.up && details.delta.dy > 0) {
-                    direction = Direction.down;
-                  } else if (direction != Direction.down && details.delta.dy < 0) {
-                    direction = Direction.up;
-                  }
-                },
-                onHorizontalDragUpdate: (details) {
-                  if (direction != Direction.left && details.delta.dx > 0) {
-                    direction = Direction.right;
-                  } else if (direction != Direction.right && details.delta.dx < 0) {
-                    direction = Direction.left;
-                  }
-                },
-                child: CustomPaint(
-                  painter: GamePainter(
-                    snakePos: snakePos,
-                    food: food,
-                    bonusFood: bonusFood,
-                    squaresPerRow: squaresPerRow,
-                    squaresPerCol: squaresPerCol,
-                    bonusTimeLeft: bonusTimeLeft,
+              content: const Text(
+                'Are you sure you want to exit the game?',
+                style: TextStyle(color: Colors.white),
+              ),
+              actions: [
+                TextButton(
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.green),
                   ),
-                  size: Size.infinite,
+                  onPressed: () {
+                    isPlaying = true;
+                    Navigator.of(context).pop(false);
+                  },
+                ),
+                TextButton(
+                  child: const Text(
+                    'Exit',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop(true);
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              ScoreBoard(
+                currentScore: score,
+                highScore: highScore,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Score: $score',
+                        style: TextStyle(color: Colors.white, fontSize: 20)),
+                    IconButton(
+                      icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white),
+                      onPressed: () {
+                        setState(() {
+                          isPlaying = !isPlaying;
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: GestureDetector(
+                  onVerticalDragUpdate: (details) {
+                    if (direction != Direction.up && details.delta.dy > 0) {
+                      direction = Direction.down;
+                    } else if (direction != Direction.down && details.delta.dy < 0) {
+                      direction = Direction.up;
+                    }
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    if (direction != Direction.left && details.delta.dx > 0) {
+                      direction = Direction.right;
+                    } else if (direction != Direction.right && details.delta.dx < 0) {
+                      direction = Direction.left;
+                    }
+                  },
+                  child: CustomPaint(
+                    painter: GamePainter(
+                      snakePos: snakePos,
+                      food: food,
+                      bonusFood: bonusFood,
+                      squaresPerRow: squaresPerRow,
+                      squaresPerCol: squaresPerCol,
+                      bonusTimeLeft: bonusTimeLeft,
+                      gameMode: widget.gameMode, // Add this line
+                    ),
+                    size: Size.infinite,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -325,6 +394,7 @@ class GamePainter extends CustomPainter {
   final int squaresPerRow;
   final int squaresPerCol;
   final int bonusTimeLeft;
+  final String gameMode; // Add this
 
   GamePainter({
     required this.snakePos,
@@ -333,10 +403,47 @@ class GamePainter extends CustomPainter {
     required this.squaresPerRow,
     required this.squaresPerCol,
     this.bonusTimeLeft = 0,
+    required this.gameMode, // Add this
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Update the condition to use gameMode parameter
+    if (gameMode == 'Boxed') {
+      final wallPaint = Paint()
+        ..color = Colors.red[900]!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0;
+
+      // Draw border walls
+      canvas.drawRect(
+        Rect.fromLTWH(
+          0,
+          0,
+          size.width,
+          size.height,
+        ),
+        wallPaint,
+      );
+      
+      // Add glow effect to walls
+      final glowPaint = Paint()
+        ..color = Colors.red.withOpacity(0.2)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8);
+        
+      canvas.drawRect(
+        Rect.fromLTWH(
+          0,
+          0,
+          size.width,
+          size.height,
+        ),
+        glowPaint,
+      );
+    }
+
     final paint = Paint();
 
     // Draw snake with gradient effects
